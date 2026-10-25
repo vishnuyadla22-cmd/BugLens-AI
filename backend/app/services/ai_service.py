@@ -1,109 +1,154 @@
 import json
+import os
 import re
 from typing import Any, Dict, List, Optional
-import httpx
 from fastapi import HTTPException
-
-from app.core.config import settings
-from app.schemas.analysis import (
-    AnalysisMode,
-    AnalyzeRequest,
-    AnalyzeResponse,
-    ComplexityAnalysis,
-    ErrorLocation,
-    SuggestedFix,
-    SupportedLanguage,
-    TestCaseSuggestion,
+from groq import (
+    AsyncGroq,
+    APIConnectionError,
+    APITimeoutError,
+    AuthenticationError,
+    GroqError,
+    NotFoundError,
+    RateLimitError,
 )
-from app.schemas.status import AIStatusResponse
+
+try:
+    from backend.app.core.config import settings
+    from backend.app.schemas.analysis import (
+        AnalysisMode,
+        AnalyzeRequest,
+        AnalyzeResponse,
+        ComplexityAnalysis,
+        ErrorLocation,
+        SuggestedFix,
+        SupportedLanguage,
+        TestCaseSuggestion,
+    )
+    from backend.app.schemas.status import AIStatusResponse
+except ImportError:
+    from app.core.config import settings
+    from app.schemas.analysis import (
+        AnalysisMode,
+        AnalyzeRequest,
+        AnalyzeResponse,
+        ComplexityAnalysis,
+        ErrorLocation,
+        SuggestedFix,
+        SupportedLanguage,
+        TestCaseSuggestion,
+    )
+    from app.schemas.status import AIStatusResponse
 
 
 class AIService:
     def __init__(self):
-        self.base_url = settings.OLLAMA_BASE_URL
-        self.configured_model = settings.OLLAMA_MODEL
-        self.timeout = settings.OLLAMA_TIMEOUT_SECONDS
+        self.configured_model = settings.GROQ_MODEL
+        self.timeout = settings.GROQ_TIMEOUT_SECONDS
+        self.service_url = "https://api.groq.com"
 
-    def _get_client(self, timeout: Optional[float] = None) -> httpx.AsyncClient:
-        return httpx.AsyncClient(timeout=timeout or self.timeout)
+    def _get_api_key(self) -> Optional[str]:
+        """Read API key exclusively from backend environment or settings."""
+        key = settings.GROQ_API_KEY or os.getenv("GROQ_API_KEY")
+        if key:
+            key = key.strip()
+        return key if key else None
+
+    def _get_client(self) -> AsyncGroq:
+        """Instantiate official AsyncGroq client."""
+        api_key = self._get_api_key()
+        return AsyncGroq(api_key=api_key or "", timeout=self.timeout)
 
     async def check_status(self) -> AIStatusResponse:
-        """Inspect whether Ollama daemon is reachable and if the configured model is installed."""
-        try:
-            async with self._get_client(timeout=3.0) as client:
-                res = await client.get(f"{self.base_url}/api/tags")
-                if res.status_code == 200:
-                    data = res.json()
-                    models = [m.get("name", "") for m in data.get("models", [])]
-                    # Check exact or prefix match (e.g. "qwen2.5-coder:7b" or "qwen2.5-coder:latest")
-                    model_found = any(
-                        self.configured_model == m
-                        or self.configured_model.split(":")[0] == m.split(":")[0]
-                        for m in models
-                    )
-
-                    if model_found:
-                        message = f"Ollama is connected and ready. Active model: '{self.configured_model}'."
-                        setup_inst = None
-                    else:
-                        message = (
-                            f"Ollama is running, but configured model '{self.configured_model}' is not installed locally. "
-                            f"Discovered models: {', '.join(models) if models else 'None'}."
-                        )
-                        setup_inst = [
-                            f"Open your terminal and run: ollama pull {self.configured_model}",
-                            "Or configure an already installed model name in .env (OLLAMA_MODEL=...)",
-                            "Click 'Check Status' in the header once the download completes.",
-                        ]
-
-                    return AIStatusResponse(
-                        connected=True,
-                        service_url=self.base_url,
-                        configured_model=self.configured_model,
-                        model_available=model_found,
-                        available_models=models,
-                        message=message,
-                        setup_instructions=setup_inst,
-                    )
-                else:
-                    return AIStatusResponse(
-                        connected=False,
-                        service_url=self.base_url,
-                        configured_model=self.configured_model,
-                        model_available=False,
-                        available_models=[],
-                        message=f"Ollama returned HTTP {res.status_code}: {res.text[:100]}",
-                        setup_instructions=[
-                            "Ensure Ollama server is running with 'ollama serve'",
-                            "Verify network accessibility at " + self.base_url,
-                        ],
-                    )
-        except httpx.ConnectError:
+        """Inspect whether Groq API is reachable and if the configured model is available."""
+        api_key = self._get_api_key()
+        if not api_key:
             return AIStatusResponse(
                 connected=False,
-                service_url=self.base_url,
+                service_url=self.service_url,
                 configured_model=self.configured_model,
                 model_available=False,
                 available_models=[],
-                message="Cannot connect to Ollama service at " + self.base_url,
+                message="GROQ_API_KEY is not configured. Please set your Groq API key in the environment or .env file.",
                 setup_instructions=[
-                    "Install Ollama from https://ollama.com/download if not already installed.",
-                    "Start the Ollama daemon: run 'ollama serve' in your terminal or start the Ollama desktop app.",
-                    f"Pull the recommended coding model: 'ollama pull {self.configured_model}'.",
-                    "Verify the service is active by refreshing or clicking 'Check Status'.",
+                    "Obtain a free Groq API key at https://console.groq.com/keys",
+                    "Add GROQ_API_KEY=gsk_... to your .env file or environment variables.",
+                    "Click 'Check Status' or restart the backend server once configured.",
+                ],
+            )
+
+        try:
+            client = self._get_client()
+            model_list = await client.models.list()
+            models = [m.id for m in model_list.data] if hasattr(model_list, "data") else []
+
+            # Check if configured model matches any available model
+            model_found = any(
+                self.configured_model == m
+                or self.configured_model.lower() == m.lower()
+                for m in models
+            )
+
+            if model_found:
+                message = f"Groq API is connected and ready. Active model: '{self.configured_model}'."
+                setup_inst = None
+            else:
+                message = (
+                    f"Groq API is connected, but configured model '{self.configured_model}' was not found in available models. "
+                    f"Discovered models: {', '.join(models[:5]) if models else 'None'}."
+                )
+                setup_inst = [
+                    f"Configure a supported model in .env (e.g. GROQ_MODEL=llama-3.3-70b-versatile).",
+                    f"Available models on Groq include: {', '.join(models[:3]) if models else 'llama-3.3-70b-versatile, llama-3.1-8b-instant'}.",
+                ]
+
+            return AIStatusResponse(
+                connected=True,
+                service_url=self.service_url,
+                configured_model=self.configured_model,
+                model_available=model_found,
+                available_models=models,
+                message=message,
+                setup_instructions=setup_inst,
+            )
+
+        except AuthenticationError:
+            return AIStatusResponse(
+                connected=False,
+                service_url=self.service_url,
+                configured_model=self.configured_model,
+                model_available=False,
+                available_models=[],
+                message="Groq authentication failed: Invalid or expired GROQ_API_KEY.",
+                setup_instructions=[
+                    "Verify your GROQ_API_KEY at https://console.groq.com/keys",
+                    "Update GROQ_API_KEY in your .env file with a valid key.",
+                    "Click 'Check Status' after updating.",
+                ],
+            )
+        except (APIConnectionError, APITimeoutError) as e:
+            return AIStatusResponse(
+                connected=False,
+                service_url=self.service_url,
+                configured_model=self.configured_model,
+                model_available=False,
+                available_models=[],
+                message=f"Cannot connect to Groq API ({self.service_url}): {str(e)}",
+                setup_instructions=[
+                    "Check network and internet connectivity.",
+                    "Verify access to https://api.groq.com.",
                 ],
             )
         except Exception as e:
             return AIStatusResponse(
                 connected=False,
-                service_url=self.base_url,
+                service_url=self.service_url,
                 configured_model=self.configured_model,
                 model_available=False,
                 available_models=[],
-                message=f"Error contacting Ollama: {str(e)}",
+                message=f"Error contacting Groq API: {str(e)}",
                 setup_instructions=[
-                    "Check if the Ollama service is running.",
-                    "Verify OLLAMA_BASE_URL setting in your .env file.",
+                    "Verify GROQ_API_KEY and network settings.",
                 ],
             )
 
@@ -229,15 +274,15 @@ CRITICAL: You MUST respond ONLY with a single valid JSON object adhering strictl
             raise ValueError(f"Could not parse valid JSON from AI response: {raw_text[:200]}")
 
     async def analyze(self, req: AnalyzeRequest) -> AnalyzeResponse:
-        """Call Ollama local model and return structured validated response."""
-        # Check Ollama connectivity first
+        """Call Groq API model and return structured validated response."""
+        # Check Groq connectivity and API key first
         status = await self.check_status()
         if not status.connected:
             raise HTTPException(
                 status_code=503,
                 detail={
-                    "error": "OLLAMA_DISCONNECTED",
-                    "message": "Local AI service (Ollama) is not reachable at " + self.base_url,
+                    "error": "GROQ_DISCONNECTED",
+                    "message": status.message,
                     "setup_instructions": status.setup_instructions,
                 },
             )
@@ -245,79 +290,88 @@ CRITICAL: You MUST respond ONLY with a single valid JSON object adhering strictl
         system_prompt = self._build_system_prompt(req.analysis_mode, req.language)
         user_prompt = self._build_user_prompt(req)
 
-        # Call Ollama /api/chat with json format
-        payload = {
-            "model": self.configured_model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "stream": False,
-            "format": "json",
-            "options": {
-                "temperature": 0.2,  # Low temperature for precise code reasoning
-                "top_p": 0.9,
-            },
-        }
+        client = self._get_client()
 
         try:
-            async with self._get_client(timeout=self.timeout) as client:
-                res = await client.post(f"{self.base_url}/api/chat", json=payload)
+            completion = await client.chat.completions.create(
+                model=self.configured_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.2,
+            )
 
-                if res.status_code == 404:
-                    raise HTTPException(
-                        status_code=503,
-                        detail={
-                            "error": "MODEL_NOT_FOUND",
-                            "message": f"Configured model '{self.configured_model}' not found in Ollama.",
-                            "setup_instructions": [
-                                f"Run: ollama pull {self.configured_model}",
-                                "Wait for the download to finish, then retry.",
-                            ],
-                        },
-                    )
-
-                if res.status_code != 200:
-                    raise HTTPException(
-                        status_code=502,
-                        detail={
-                            "error": "OLLAMA_ERROR",
-                            "message": f"Ollama returned HTTP error {res.status_code}: {res.text[:200]}",
-                        },
-                    )
-
-                data = res.json()
-                raw_content = data.get("message", {}).get("content", "")
-                if not raw_content:
-                    raise HTTPException(
-                        status_code=502,
-                        detail={
-                            "error": "EMPTY_AI_RESPONSE",
-                            "message": "AI model returned an empty response.",
-                        },
-                    )
+            choice = completion.choices[0] if completion.choices else None
+            raw_content = choice.message.content if choice and choice.message else ""
+            if not raw_content:
+                raise HTTPException(
+                    status_code=502,
+                    detail={
+                        "error": "EMPTY_AI_RESPONSE",
+                        "message": "Groq AI model returned an empty response.",
+                    },
+                )
 
         except HTTPException:
             raise
-        except httpx.TimeoutException:
+        except AuthenticationError:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "GROQ_AUTH_ERROR",
+                    "message": "Groq authentication failed: Invalid or expired GROQ_API_KEY.",
+                    "setup_instructions": [
+                        "Verify your GROQ_API_KEY at https://console.groq.com/keys",
+                    ],
+                },
+            )
+        except NotFoundError:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "MODEL_NOT_FOUND",
+                    "message": f"Configured model '{self.configured_model}' not found in Groq.",
+                    "setup_instructions": [
+                        "Update GROQ_MODEL in .env to a supported model such as 'llama-3.3-70b-versatile'.",
+                    ],
+                },
+            )
+        except RateLimitError:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "GROQ_RATE_LIMIT",
+                    "message": "Groq API rate limit exceeded. Please wait a moment and try again.",
+                },
+            )
+        except APITimeoutError:
             raise HTTPException(
                 status_code=504,
                 detail={
                     "error": "AI_TIMEOUT",
-                    "message": f"AI inference timed out after {self.timeout} seconds. The local machine might be under heavy load.",
+                    "message": f"Groq inference timed out after {self.timeout} seconds.",
                     "setup_instructions": [
-                        "Consider using a lighter model (e.g. 'qwen2.5-coder:1.5b')",
-                        "Increase OLLAMA_TIMEOUT_SECONDS in .env",
+                        "Increase GROQ_TIMEOUT_SECONDS in .env or retry.",
                     ],
                 },
             )
-        except httpx.ConnectError:
+        except APIConnectionError as e:
             raise HTTPException(
                 status_code=503,
                 detail={
-                    "error": "OLLAMA_DISCONNECTED",
-                    "message": "Failed to connect to Ollama during analysis call.",
+                    "error": "GROQ_CONNECTION_ERROR",
+                    "message": f"Failed to connect to Groq API ({self.service_url}): {str(e)}",
                     "setup_instructions": status.setup_instructions,
+                },
+            )
+        except GroqError as e:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "error": "GROQ_ERROR",
+                    "message": f"Groq API error: {str(e)}",
                 },
             )
 

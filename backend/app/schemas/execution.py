@@ -1,7 +1,11 @@
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field
-from app.schemas.analysis import SupportedLanguage
+
+try:
+    from backend.app.schemas.analysis import SupportedLanguage
+except ImportError:
+    from .analysis import SupportedLanguage
 
 
 class ExecutionStatus(str, Enum):

@@ -1,13 +1,15 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 from fastapi import HTTPException
-from app.schemas.analysis import (
+from groq import AuthenticationError, RateLimitError
+
+from backend.app.schemas.analysis import (
     AnalysisMode,
     AnalyzeRequest,
     SupportedLanguage,
 )
-from app.services.ai_service import AIService
+from backend.app.services.ai_service import AIService
 
 
 @pytest.fixture
@@ -16,66 +18,73 @@ def ai_service_instance():
 
 
 @pytest.mark.asyncio
-async def test_check_status_offline(ai_service_instance):
-    def mock_handler(request: httpx.Request):
-        raise httpx.ConnectError("Connection refused")
-
-    transport = httpx.MockTransport(mock_handler)
-    with patch.object(
-        ai_service_instance,
-        "_get_client",
-        side_effect=lambda timeout=None: httpx.AsyncClient(transport=transport),
-    ):
+async def test_check_status_no_api_key(ai_service_instance):
+    with patch.object(ai_service_instance, "_get_api_key", return_value=None):
         status = await ai_service_instance.check_status()
         assert status.connected is False
         assert status.model_available is False
         assert status.setup_instructions is not None
-        assert any("ollama serve" in s.lower() for s in status.setup_instructions)
+        assert any("GROQ_API_KEY" in s for s in status.setup_instructions)
 
 
 @pytest.mark.asyncio
-async def test_check_status_model_available(ai_service_instance):
-    def mock_handler(request: httpx.Request):
-        return httpx.Response(
-            200,
-            json={"models": [{"name": "qwen2.5-coder:7b"}, {"name": "llama3:latest"}]},
-        )
+async def test_check_status_connected_model_available(ai_service_instance):
+    mock_client = AsyncMock()
+    mock_model1 = MagicMock()
+    mock_model1.id = "llama-3.3-70b-versatile"
+    mock_model2 = MagicMock()
+    mock_model2.id = "llama-3.1-8b-instant"
 
-    transport = httpx.MockTransport(mock_handler)
-    with patch.object(
-        ai_service_instance,
-        "_get_client",
-        side_effect=lambda timeout=None: httpx.AsyncClient(transport=transport),
-    ):
-        status = await ai_service_instance.check_status()
-        assert status.connected is True
-        assert status.model_available is True
-        assert "qwen2.5-coder:7b" in status.available_models
+    mock_models_response = MagicMock()
+    mock_models_response.data = [mock_model1, mock_model2]
+    mock_client.models.list.return_value = mock_models_response
 
-
-@pytest.mark.asyncio
-async def test_check_status_model_missing(ai_service_instance):
-    def mock_handler(request: httpx.Request):
-        return httpx.Response(
-            200,
-            json={"models": [{"name": "mistral:latest"}]},
-        )
-
-    transport = httpx.MockTransport(mock_handler)
-    with patch.object(
-        ai_service_instance,
-        "_get_client",
-        side_effect=lambda timeout=None: httpx.AsyncClient(transport=transport),
-    ):
-        status = await ai_service_instance.check_status()
-        assert status.connected is True
-        assert status.model_available is False
-        assert status.setup_instructions is not None
-        assert any("ollama pull" in s.lower() for s in status.setup_instructions)
+    with patch.object(ai_service_instance, "_get_api_key", return_value="gsk_valid_key"):
+        with patch.object(ai_service_instance, "_get_client", return_value=mock_client):
+            status = await ai_service_instance.check_status()
+            assert status.connected is True
+            assert status.model_available is True
+            assert "llama-3.3-70b-versatile" in status.available_models
+            assert "connected and ready" in status.message
 
 
 @pytest.mark.asyncio
-async def test_analyze_when_ollama_offline(ai_service_instance):
+async def test_check_status_connected_model_missing(ai_service_instance):
+    mock_client = AsyncMock()
+    mock_model = MagicMock()
+    mock_model.id = "different-model-only"
+
+    mock_models_response = MagicMock()
+    mock_models_response.data = [mock_model]
+    mock_client.models.list.return_value = mock_models_response
+
+    with patch.object(ai_service_instance, "_get_api_key", return_value="gsk_valid_key"):
+        with patch.object(ai_service_instance, "_get_client", return_value=mock_client):
+            status = await ai_service_instance.check_status()
+            assert status.connected is True
+            assert status.model_available is False
+            assert status.setup_instructions is not None
+
+
+@pytest.mark.asyncio
+async def test_check_status_auth_error(ai_service_instance):
+    req = httpx.Request("GET", "https://api.groq.com/openai/v1/models")
+    resp = httpx.Response(401, request=req)
+    auth_err = AuthenticationError("Invalid API key", response=resp, body={"error": "invalid_api_key"})
+
+    mock_client = AsyncMock()
+    mock_client.models.list.side_effect = auth_err
+
+    with patch.object(ai_service_instance, "_get_api_key", return_value="gsk_bad_key"):
+        with patch.object(ai_service_instance, "_get_client", return_value=mock_client):
+            status = await ai_service_instance.check_status()
+            assert status.connected is False
+            assert status.model_available is False
+            assert "authentication failed" in status.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_analyze_when_disconnected(ai_service_instance):
     req = AnalyzeRequest(
         language=SupportedLanguage.PYTHON,
         problem_statement="Calculate factorial of N",
@@ -83,19 +92,11 @@ async def test_analyze_when_ollama_offline(ai_service_instance):
         analysis_mode=AnalysisMode.FIND_ERROR,
     )
 
-    def mock_handler(request: httpx.Request):
-        raise httpx.ConnectError("Connection refused")
-
-    transport = httpx.MockTransport(mock_handler)
-    with patch.object(
-        ai_service_instance,
-        "_get_client",
-        side_effect=lambda timeout=None: httpx.AsyncClient(transport=transport),
-    ):
+    with patch.object(ai_service_instance, "_get_api_key", return_value=None):
         with pytest.raises(HTTPException) as exc_info:
             await ai_service_instance.analyze(req)
         assert exc_info.value.status_code == 503
-        assert exc_info.value.detail["error"] == "OLLAMA_DISCONNECTED"
+        assert exc_info.value.detail["error"] == "GROQ_DISCONNECTED"
 
 
 @pytest.mark.asyncio
@@ -148,36 +149,38 @@ async def test_analyze_success_parsing(ai_service_instance):
     }
     """
 
-    def mock_handler(request: httpx.Request):
-        url_str = str(request.url)
-        if "/api/tags" in url_str:
-            return httpx.Response(200, json={"models": [{"name": "qwen2.5-coder:7b"}]})
-        elif "/api/chat" in url_str:
-            return httpx.Response(200, json={"message": {"content": ai_json_output}})
-        return httpx.Response(404)
+    mock_client = AsyncMock()
+    mock_model = MagicMock()
+    mock_model.id = "llama-3.3-70b-versatile"
+    mock_models_response = MagicMock()
+    mock_models_response.data = [mock_model]
+    mock_client.models.list.return_value = mock_models_response
 
-    transport = httpx.MockTransport(mock_handler)
-    with patch.object(
-        ai_service_instance,
-        "_get_client",
-        side_effect=lambda timeout=None: httpx.AsyncClient(transport=transport),
-    ):
-        res = await ai_service_instance.analyze(req)
-        assert res.overall_assessment.startswith("Infinite recursion")
-        assert "Runtime Error" in res.error_classifications
-        assert len(res.error_locations) == 1
-        assert res.error_locations[0].line_number == 1
-        assert len(res.suggested_fixes) == 1
-        assert res.suggested_fixes[0].fixed_snippet is not None
-        assert res.complexity_analysis is not None
-        assert res.complexity_analysis.time_complexity == "O(N)"
-        assert len(res.test_suggestions) == 1
-        assert res.test_suggestions[0].is_edge_case is True
+    mock_choice = MagicMock()
+    mock_choice.message.content = ai_json_output
+    mock_completion = MagicMock()
+    mock_completion.choices = [mock_choice]
+    mock_client.chat.completions.create.return_value = mock_completion
+
+    with patch.object(ai_service_instance, "_get_api_key", return_value="gsk_valid_key"):
+        with patch.object(ai_service_instance, "_get_client", return_value=mock_client):
+            res = await ai_service_instance.analyze(req)
+            assert res.overall_assessment.startswith("Infinite recursion")
+            assert "Runtime Error" in res.error_classifications
+            assert len(res.error_locations) == 1
+            assert res.error_locations[0].line_number == 1
+            assert len(res.suggested_fixes) == 1
+            assert res.suggested_fixes[0].fixed_snippet is not None
+            assert res.complexity_analysis is not None
+            assert res.complexity_analysis.time_complexity == "O(N)"
+            assert len(res.test_suggestions) == 1
+            assert res.test_suggestions[0].is_edge_case is True
+            assert res.model_used == "llama-3.3-70b-versatile"
 
 
 @pytest.mark.asyncio
 async def test_analyze_markdown_wrapped_json(ai_service_instance):
-    """Test when Ollama wraps json in ```json ... ``` code fence."""
+    """Test when Groq wraps json in ```json ... ``` code fence."""
     req = AnalyzeRequest(
         language=SupportedLanguage.CPP,
         problem_statement="Binary search in array",
@@ -207,20 +210,50 @@ async def test_analyze_markdown_wrapped_json(ai_service_instance):
     }
     ```"""
 
-    def mock_handler(request: httpx.Request):
-        url_str = str(request.url)
-        if "/api/tags" in url_str:
-            return httpx.Response(200, json={"models": [{"name": "qwen2.5-coder:7b"}]})
-        elif "/api/chat" in url_str:
-            return httpx.Response(200, json={"message": {"content": wrapped_content}})
-        return httpx.Response(404)
+    mock_client = AsyncMock()
+    mock_model = MagicMock()
+    mock_model.id = "llama-3.3-70b-versatile"
+    mock_models_response = MagicMock()
+    mock_models_response.data = [mock_model]
+    mock_client.models.list.return_value = mock_models_response
 
-    transport = httpx.MockTransport(mock_handler)
-    with patch.object(
-        ai_service_instance,
-        "_get_client",
-        side_effect=lambda timeout=None: httpx.AsyncClient(transport=transport),
-    ):
-        res = await ai_service_instance.analyze(req)
-        assert "Potential Edge-Case Failure" in res.error_classifications
-        assert res.suggested_fixes[0].fixed_snippet == "int mid = l + (r - l) / 2;"
+    mock_choice = MagicMock()
+    mock_choice.message.content = wrapped_content
+    mock_completion = MagicMock()
+    mock_completion.choices = [mock_choice]
+    mock_client.chat.completions.create.return_value = mock_completion
+
+    with patch.object(ai_service_instance, "_get_api_key", return_value="gsk_valid_key"):
+        with patch.object(ai_service_instance, "_get_client", return_value=mock_client):
+            res = await ai_service_instance.analyze(req)
+            assert "Potential Edge-Case Failure" in res.error_classifications
+            assert res.suggested_fixes[0].fixed_snippet == "int mid = l + (r - l) / 2;"
+
+
+@pytest.mark.asyncio
+async def test_analyze_rate_limit(ai_service_instance):
+    req = AnalyzeRequest(
+        language=SupportedLanguage.PYTHON,
+        problem_statement="Problem statement",
+        code="x = 1",
+        analysis_mode=AnalysisMode.FIND_ERROR,
+    )
+
+    h_req = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    h_resp = httpx.Response(429, request=h_req)
+    rate_err = RateLimitError("Rate limit reached", response=h_resp, body={"error": "rate_limit"})
+
+    mock_client = AsyncMock()
+    mock_model = MagicMock()
+    mock_model.id = "llama-3.3-70b-versatile"
+    mock_models_response = MagicMock()
+    mock_models_response.data = [mock_model]
+    mock_client.models.list.return_value = mock_models_response
+    mock_client.chat.completions.create.side_effect = rate_err
+
+    with patch.object(ai_service_instance, "_get_api_key", return_value="gsk_valid_key"):
+        with patch.object(ai_service_instance, "_get_client", return_value=mock_client):
+            with pytest.raises(HTTPException) as exc_info:
+                await ai_service_instance.analyze(req)
+            assert exc_info.value.status_code == 429
+            assert exc_info.value.detail["error"] == "GROQ_RATE_LIMIT"

@@ -12,11 +12,11 @@ class HealthResponse(BaseModel):
 
 
 class AIStatusResponse(BaseModel):
-    connected: bool = Field(description="Whether Ollama daemon is reachable")
-    service_url: str = Field(description="Configured Ollama base URL")
+    connected: bool = Field(description="Whether Groq API service is reachable")
+    service_url: str = Field(description="Configured AI service endpoint")
     configured_model: str = Field(description="Configured model name in settings")
-    model_available: bool = Field(description="Whether the configured model is installed locally")
-    available_models: List[str] = Field(default_factory=list, description="List of local models discovered")
+    model_available: bool = Field(description="Whether the configured model is available")
+    available_models: List[str] = Field(default_factory=list, description="List of models discovered")
     message: str = Field(description="User-friendly status or diagnostic message")
     setup_instructions: Optional[List[str]] = Field(
         default=None, description="Step-by-step instructions if offline or model missing"

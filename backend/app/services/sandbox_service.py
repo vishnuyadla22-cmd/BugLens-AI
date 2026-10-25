@@ -5,13 +5,22 @@ import sys
 import tempfile
 import time
 from typing import Optional, Tuple
-from app.core.config import settings
-from app.schemas.analysis import SupportedLanguage
-from app.schemas.execution import (
-    ExecutionStatus,
-    ExecuteResponse,
-    OutputComparison,
-)
+try:
+    from backend.app.core.config import settings
+    from backend.app.schemas.analysis import SupportedLanguage
+    from backend.app.schemas.execution import (
+        ExecutionStatus,
+        ExecuteResponse,
+        OutputComparison,
+    )
+except ImportError:
+    from app.core.config import settings
+    from app.schemas.analysis import SupportedLanguage
+    from app.schemas.execution import (
+        ExecutionStatus,
+        ExecuteResponse,
+        OutputComparison,
+    )
 
 
 class SandboxService:

@@ -1,12 +1,28 @@
+import sys
+from pathlib import Path
+
+# Ensure root and backend directories are on sys.path
+root_dir = str(Path(__file__).resolve().parent.parent.parent)
+backend_dir = str(Path(__file__).resolve().parent.parent)
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.api.router import router
-from app.core.config import settings
+
+try:
+    from backend.app.api.router import router
+    from backend.app.core.config import settings
+except ImportError:
+    from app.api.router import router
+    from app.core.config import settings
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    description="BugLens AI: See the Bug. Understand the Cause. Fix with Confidence. AI-powered local debugging engine.",
+    description="BugLens AI: See the Bug. Understand the Cause. Fix with Confidence. AI-powered debugging engine.",
     version=settings.VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -42,7 +58,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "app.main:app",
+        "backend.app.main:app",
         host=settings.BACKEND_HOST,
         port=settings.BACKEND_PORT,
         reload=True,

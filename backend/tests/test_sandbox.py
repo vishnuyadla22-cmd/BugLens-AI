@@ -1,7 +1,12 @@
 import pytest
-from app.schemas.analysis import SupportedLanguage
-from app.schemas.execution import ExecutionStatus
-from app.services.sandbox_service import sandbox_service
+try:
+    from backend.app.schemas.analysis import SupportedLanguage
+    from backend.app.schemas.execution import ExecutionStatus
+    from backend.app.services.sandbox_service import sandbox_service
+except ImportError:
+    from app.schemas.analysis import SupportedLanguage
+    from app.schemas.execution import ExecutionStatus
+    from app.services.sandbox_service import sandbox_service
 
 
 def test_python_successful_execution():

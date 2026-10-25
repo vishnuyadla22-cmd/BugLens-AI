@@ -1,11 +1,20 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status
-from app.core.config import settings
-from app.schemas.analysis import AnalyzeRequest, AnalyzeResponse
-from app.schemas.execution import ExecuteRequest, ExecuteResponse
-from app.schemas.status import AIStatusResponse, HealthResponse
-from app.services.ai_service import ai_service
-from app.services.sandbox_service import sandbox_service
+
+try:
+    from backend.app.core.config import settings
+    from backend.app.schemas.analysis import AnalyzeRequest, AnalyzeResponse
+    from backend.app.schemas.execution import ExecuteRequest, ExecuteResponse
+    from backend.app.schemas.status import AIStatusResponse, HealthResponse
+    from backend.app.services.ai_service import ai_service
+    from backend.app.services.sandbox_service import sandbox_service
+except ImportError:
+    from app.core.config import settings
+    from app.schemas.analysis import AnalyzeRequest, AnalyzeResponse
+    from app.schemas.execution import ExecuteRequest, ExecuteResponse
+    from app.schemas.status import AIStatusResponse, HealthResponse
+    from app.services.ai_service import ai_service
+    from app.services.sandbox_service import sandbox_service
 
 router = APIRouter()
 
@@ -25,13 +34,13 @@ async def get_health():
 
 @router.get("/api/ai/status", response_model=AIStatusResponse, tags=["AI Engine"])
 async def get_ai_status():
-    """Inspect local Ollama connectivity and model availability."""
+    """Inspect Groq API connectivity and model availability."""
     return await ai_service.check_status()
 
 
 @router.post("/api/analyze", response_model=AnalyzeResponse, tags=["AI Engine"])
 async def analyze_code(request: AnalyzeRequest):
-    """Analyze code against problem statement using local open-weight model."""
+    """Analyze code against problem statement using configured Groq model."""
     # Enforce reasonable input size constraints to prevent memory abuse
     if len(request.code) > settings.MAX_CODE_LENGTH_CHARS:
         raise HTTPException(

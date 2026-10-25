@@ -1,21 +1,39 @@
 import pytest
 from pydantic import ValidationError
-from app.schemas.analysis import (
-    AnalysisMode,
-    AnalyzeRequest,
-    AnalyzeResponse,
-    ComplexityAnalysis,
-    ErrorLocation,
-    SuggestedFix,
-    SupportedLanguage,
-    TestCaseSuggestion,
-)
-from app.schemas.execution import (
-    ExecuteRequest,
-    ExecuteResponse,
-    ExecutionStatus,
-    OutputComparison,
-)
+try:
+    from backend.app.schemas.analysis import (
+        AnalysisMode,
+        AnalyzeRequest,
+        AnalyzeResponse,
+        ComplexityAnalysis,
+        ErrorLocation,
+        SuggestedFix,
+        SupportedLanguage,
+        TestCaseSuggestion,
+    )
+    from backend.app.schemas.execution import (
+        ExecuteRequest,
+        ExecuteResponse,
+        ExecutionStatus,
+        OutputComparison,
+    )
+except ImportError:
+    from app.schemas.analysis import (
+        AnalysisMode,
+        AnalyzeRequest,
+        AnalyzeResponse,
+        ComplexityAnalysis,
+        ErrorLocation,
+        SuggestedFix,
+        SupportedLanguage,
+        TestCaseSuggestion,
+    )
+    from app.schemas.execution import (
+        ExecuteRequest,
+        ExecuteResponse,
+        ExecutionStatus,
+        OutputComparison,
+    )
 
 
 def test_analyze_request_valid():

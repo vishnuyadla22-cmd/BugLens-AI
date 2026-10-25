@@ -1,5 +1,5 @@
-from app.schemas.status import HealthResponse, AIStatusResponse
-from app.schemas.analysis import (
+from .status import HealthResponse, AIStatusResponse
+from .analysis import (
     SupportedLanguage,
     AnalysisMode,
     AnalyzeRequest,
@@ -10,7 +10,7 @@ from app.schemas.analysis import (
     TestCaseSuggestion,
     ComplexityAnalysis,
 )
-from app.schemas.execution import (
+from .execution import (
     ExecutionStatus,
     ExecuteRequest,
     ExecuteResponse,
