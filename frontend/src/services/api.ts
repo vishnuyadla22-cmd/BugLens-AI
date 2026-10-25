@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../config';
 import type {
   AIStatusResponse,
   AnalyzeRequest,
@@ -7,7 +8,7 @@ import type {
   HealthResponse,
 } from '../types';
 
-const API_BASE = '';
+const API_BASE = API_BASE_URL;
 
 export class APIError extends Error {
   status: number;
