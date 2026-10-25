@@ -5,9 +5,9 @@ import sys
 import tempfile
 import time
 from typing import Optional, Tuple
-from backend.app.core.config import settings
-from backend.app.schemas.analysis import SupportedLanguage
-from backend.app.schemas.execution import (
+from app.core.config import settings
+from app.schemas.analysis import SupportedLanguage
+from app.schemas.execution import (
     ExecutionStatus,
     ExecuteResponse,
     OutputComparison,

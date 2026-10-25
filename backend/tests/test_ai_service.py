@@ -2,12 +2,12 @@ import pytest
 from unittest.mock import patch
 import httpx
 from fastapi import HTTPException
-from backend.app.schemas.analysis import (
+from app.schemas.analysis import (
     AnalysisMode,
     AnalyzeRequest,
     SupportedLanguage,
 )
-from backend.app.services.ai_service import AIService
+from app.services.ai_service import AIService
 
 
 @pytest.fixture

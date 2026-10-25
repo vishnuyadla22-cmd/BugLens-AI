@@ -1,5 +1,5 @@
-from backend.app.schemas.status import HealthResponse, AIStatusResponse
-from backend.app.schemas.analysis import (
+from app.schemas.status import HealthResponse, AIStatusResponse
+from app.schemas.analysis import (
     SupportedLanguage,
     AnalysisMode,
     AnalyzeRequest,
@@ -10,7 +10,7 @@ from backend.app.schemas.analysis import (
     TestCaseSuggestion,
     ComplexityAnalysis,
 )
-from backend.app.schemas.execution import (
+from app.schemas.execution import (
     ExecutionStatus,
     ExecuteRequest,
     ExecuteResponse,

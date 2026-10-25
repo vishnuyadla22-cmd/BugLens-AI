@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status
 from app.core.config import settings
-from backend.app.schemas.analysis import AnalyzeRequest, AnalyzeResponse
-from backend.app.schemas.execution import ExecuteRequest, ExecuteResponse
-from backend.app.schemas.status import AIStatusResponse, HealthResponse
-from backend.app.services.ai_service import ai_service
-from backend.app.services.sandbox_service import sandbox_service
+from app.schemas.analysis import AnalyzeRequest, AnalyzeResponse
+from app.schemas.execution import ExecuteRequest, ExecuteResponse
+from app.schemas.status import AIStatusResponse, HealthResponse
+from app.services.ai_service import ai_service
+from app.services.sandbox_service import sandbox_service
 
 router = APIRouter()
 

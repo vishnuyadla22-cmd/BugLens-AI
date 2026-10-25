@@ -4,8 +4,8 @@ from typing import Any, Dict, List, Optional
 import httpx
 from fastapi import HTTPException
 
-from backend.app.core.config import settings
-from backend.app.schemas.analysis import (
+from app.core.config import settings
+from app.schemas.analysis import (
     AnalysisMode,
     AnalyzeRequest,
     AnalyzeResponse,
@@ -15,7 +15,7 @@ from backend.app.schemas.analysis import (
     SupportedLanguage,
     TestCaseSuggestion,
 )
-from backend.app.schemas.status import AIStatusResponse
+from app.schemas.status import AIStatusResponse
 
 
 class AIService:

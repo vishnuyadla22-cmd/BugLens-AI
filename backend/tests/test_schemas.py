@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from backend.app.schemas.analysis import (
+from app.schemas.analysis import (
     AnalysisMode,
     AnalyzeRequest,
     AnalyzeResponse,
@@ -10,7 +10,7 @@ from backend.app.schemas.analysis import (
     SupportedLanguage,
     TestCaseSuggestion,
 )
-from backend.app.schemas.execution import (
+from app.schemas.execution import (
     ExecuteRequest,
     ExecuteResponse,
     ExecutionStatus,

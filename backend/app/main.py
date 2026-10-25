@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.api.router import router
-from backend.app.core.config import settings
+from app.core.config import settings
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "backend.app.main:app",
+        "app.main:app",
         host=settings.BACKEND_HOST,
         port=settings.BACKEND_PORT,
         reload=True,
