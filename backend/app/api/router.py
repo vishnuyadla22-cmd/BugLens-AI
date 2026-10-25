@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status
-from backend.app.core.config import settings
+from app.core.config import settings
 from backend.app.schemas.analysis import AnalyzeRequest, AnalyzeResponse
 from backend.app.schemas.execution import ExecuteRequest, ExecuteResponse
 from backend.app.schemas.status import AIStatusResponse, HealthResponse
