@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from backend.app.api.router import router
+from app.api.router import router
 from backend.app.core.config import settings
 
 app = FastAPI(
